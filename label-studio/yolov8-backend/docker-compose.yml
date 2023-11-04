@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  ml-backend:
+    container_name: ml-backend
+    image: humansignal/ml-backend:v0
+    build: .
+    environment:
+      - MODEL_DIR=/data/models
+      - WORKERS=2
+      - THREADS=4
+      - LOG_LEVEL=DEBUG
+      - ANY=PARAMETER
+      - LABEL_STUDIO_ACCESS_TOKEN
+      - LABEL_STUDIO_HOST
+      - LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT
+    ports:
+      - "9090:9090"
+    volumes:
+      - .:/app
+      - venv-vol:/app/venv
+
+volumes:
+  venv-vol:
