@@ -1,3 +1,6 @@
 **/.envrc
 **/venv/
 **/__pycache__/
+
+JSON2YOLO/
+export/
