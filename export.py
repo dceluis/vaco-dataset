@@ -1,4 +1,5 @@
 import requests
+import sys
 import json
 import os
 import random
@@ -6,6 +7,9 @@ import zipfile
 import glob
 import shutil
 from sahi.slicing import slice_coco
+
+sys.path.append('JSON2YOLO')
+from general_json2yolo import convert_coco_json
 
 # Set up the necessary variables
 label_studio_host = os.environ.get("LABEL_STUDIO_HOST", "http://localhost:8080")
@@ -78,14 +82,32 @@ def download_dataset(dataset, version: int = 1):
             verbose=False
         )
 
-        # move coco file to the dataset folder
-        shutil.move(coco_path, dataset_dir)
+        # remove the result.json file
+        os.remove(coco_annotation_file_path)
+
+        # move coco file
+        shutil.move(coco_path, coco_annotation_file_path)
 
         new_coco_path = os.path.join(dataset_dir, os.path.basename(coco_path))
 
         return coco_dict, new_coco_path
     else:
         print("Failed to start the export.")
+
+def convert_dataset(dataset_dir):
+    convert_coco_json(
+        json_dir=dataset_dir,
+    )
+
+    # move the converted files to the correct directory
+    files_pattern = f"./new_dir/labels/result/*.txt"
+
+    labels_dir = os.path.join(dataset_dir, "labels")
+    if not os.path.exists(labels_dir):
+        os.makedirs(labels_dir)
+
+    for file in glob.glob(files_pattern):
+        shutil.move(file, labels_dir)
 
 # create the export folder if it doesn't exist, otherwise leave it as is
 if not os.path.exists("./export"):
@@ -102,5 +124,11 @@ os.mkdir(f"./export/{version}")
 
 # download the train, val and test datasets
 train_dict, train_json_path = download_dataset("train", version)
+
 val_dict, val_json_path = download_dataset("val", version)
+
 test_dict, test_json_path = download_dataset("test", version)
+
+convert_dataset(f"./export/{version}/train")
+convert_dataset(f"./export/{version}/val")
+convert_dataset(f"./export/{version}/test")
