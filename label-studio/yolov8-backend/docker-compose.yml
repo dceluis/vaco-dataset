@@ -13,12 +13,13 @@ services:
       - ANY=PARAMETER
       - LABEL_STUDIO_ACCESS_TOKEN
       - LABEL_STUDIO_HOST
-      - LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT
+      - LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/app
     ports:
       - "9090:9090"
     volumes:
       - .:/app
       - venv-vol:/app/venv
+      - ../../images:/app/images
 
 volumes:
   venv-vol:

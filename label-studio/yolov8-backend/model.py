@@ -1,12 +1,21 @@
 import os
 import cv2
+
 from ultralytics import YOLO
 from typing import List, Dict, Optional
 from label_studio_ml.model import LabelStudioMLBase
-from label_studio_ml.utils import get_single_tag_keys, get_image_local_path
+from label_studio_ml.utils import get_single_tag_keys, get_image_local_path, get_image_size
 
-LABEL_STUDIO_HOST = os.environ.get("LABEL_STUDIO_HOST")
-LABEL_STUDIO_ACCESS_TOKEN = os.environ.get("LABEL_STUDIO_ACCESS_TOKEN")
+from label_studio_tools.core.utils.params import get_env
+
+from sahi import AutoDetectionModel
+from sahi.predict import get_sliced_prediction
+
+LABEL_STUDIO_HOST = get_env("HOST")
+LABEL_STUDIO_ACCESS_TOKEN = get_env("ACCESS_TOKEN")
+LOCAL_FILES_DOCUMENT_ROOT = get_env("LOCAL_FILES_DOCUMENT_ROOT")
+
+YOLOV8_MODEL_PATH = "vacov8n-vaco-best.pt"
 
 class NewModel(LabelStudioMLBase):
     def __init__(self, *args, **kwargs):
@@ -19,7 +28,14 @@ class NewModel(LabelStudioMLBase):
             )
 
         # Load model
-        self.model = YOLO("vacov8n-vaco-best.pt")
+        self.model = YOLO(YOLOV8_MODEL_PATH)
+        self.sahi_model = AutoDetectionModel.from_pretrained(
+            model_type='yolov8',
+            model_path=YOLOV8_MODEL_PATH,
+            confidence_threshold=0.3,
+            device="cpu",  # or 'cuda:0'
+        )
+
 
     def predict(self, tasks: List[Dict], context: Optional[Dict] = None, **kwargs) -> List[Dict]:
         """ Write your inference logic here
@@ -41,34 +57,40 @@ class NewModel(LabelStudioMLBase):
         # Getting URL of the image
         image_url = task['data'][self.value]
 
-        # Getting full URL
         image_path = get_image_local_path(
             image_url,
+            label_studio_host=LABEL_STUDIO_HOST,
             label_studio_access_token=LABEL_STUDIO_ACCESS_TOKEN,
-            label_studio_host=LABEL_STUDIO_HOST
         )
 
-        image = cv2.imread(image_path)
-
         # Height and width of image
-        original_width, original_height = image.shape[1], image.shape[0]
+        original_width, original_height = get_image_size(image_path)
 
         # Creating list for predictions and variable for scores
         predictions = []
         score = 0
 
         # Getting prediction using model
-        results = self.model(image)
+        results = get_sliced_prediction(
+            image_path,
+            self.sahi_model,
+            slice_height=640,
+            slice_width=640,
+            overlap_height_ratio=0.2,
+            overlap_width_ratio=0.2
+        )
 
-        boxes = results[0].boxes
+        results = results.object_prediction_list
+
+        # boxes = results[0].boxes
 
         # # Getting mask segments, boxes from model prediction
-        for i, box in enumerate(boxes):
-            x, y, width, height = box.xywh[0].tolist()
+        for i, result in enumerate(results):
+            x, y, width, height = result.bbox.to_xywh()
 
             # Calculating x and y
-            x = (x - width / 2) / original_width * 100
-            y = (y - height / 2) / original_height * 100
+            x = x / original_width * 100
+            y = y / original_height * 100
             width = width / original_width * 100
             height = height / original_height * 100
 
@@ -78,7 +100,7 @@ class NewModel(LabelStudioMLBase):
                 "to_name" : self.to_name,
                 "id": str(i),
                 "type": "rectanglelabels",
-                "score": box.conf.item(),
+                "score": result.score.value,
                 "original_width": original_width,
                 "original_height": original_height,
                 "image_rotation": 0,
@@ -87,17 +109,17 @@ class NewModel(LabelStudioMLBase):
                     "y": y,
                     "width": width,
                     "height": height,
-                    "rectanglelabels": [self.classes[int(box.cls.item())]]
+                    "rectanglelabels": [self.classes[int(result.category.id)]]
                 }})
 
             # Calculating score
-            score += box.conf.item()
+            score += result.score.value
 
         # Append final dicts to final_predictions
         final_predictions.append({
             "result": predictions,
             "model_version": self.get("model_version"),
-            "score": score / len(predictions)
+            "score": score / len(predictions) if len(predictions) > 0 else 0
         })
 
         return final_predictions
